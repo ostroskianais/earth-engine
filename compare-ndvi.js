@@ -1,4 +1,10 @@
-// CDL
+// ROI: point geometry - a pixel of interest. Select with GEE
+// Import MOD09GQ as modisGQ
+// Import MOD09GA as modisGA
+// import LANDSAT/LC08/C02/T1 as l8Raw
+// Import Crop Data Layer as cdl
+
+// CDL -------------------------------------------------------------------
 var cropLandcover = cdl
   .filter(ee.Filter.date('2018-01-01', '2019-12-31'))
   .first()
@@ -52,7 +58,6 @@ var maskClouds = function(image) {
 }
 
 // Add variables for model fitting
-// 
 var addVariables = function(image) {
   var date = ee.Date(image.get(timeField)); // general way to get the date
   var years = date.difference(ee.Date('1970-01-01'), 'year'); // computing the time in years units of unix/epic time
@@ -61,11 +66,13 @@ var addVariables = function(image) {
     .addBands(ee.Image.constant(1)); // eq to add columns of 1 in the design matrix, a feature where every pixel equals to 1
 };
 
+// Calculte NDVI
 var addNDVI = function(image) {
   var ndvi = image.normalizedDifference(['N', 'R']).rename('NDVI');
   return image.addBands(ndvi);
 };
 
+// Rename bands to match function
 var renameBandModis = function(image){
   return image.select(['sur_refl_b01', 'sur_refl_b02'])
   .rename(['R', 'N']);
@@ -76,7 +83,7 @@ var renameBandLands = function(image){
   .rename(['R', 'N']);
 }
 
-// Apply function and filter ---------------------------------------------
+// Apply functions and filter ---------------------------------------------
 
 // Modis
 var modis1 = modisQARaw.filterDate('2017-01-01', '2020-12-30')
@@ -95,10 +102,6 @@ var l8 = l8Raw.filterDate('2017-01-01', '2020-12-30')
   .map(addNDVI)
   .map(addVariables);
   
-// var planet = planetRaw.filterDate('2019-01-01', '2020-12-30')
-//   .map(addNDVI)
-//   .map(addVariables);
-
 // Compute the betas using linear regresion reducer ----------------------
 var independents = ee.List(['constant', 't']);
 var dependent = ee.String('NDVI');
@@ -108,10 +111,6 @@ var trendModis = modis.select(independents.add(dependent)) // append ndvi to the
 
 var trendLands = l8.select(independents.add(dependent)) // append ndvi to the end // expects the bands to be in order of independent followed by dependent
   .reduce(ee.Reducer.linearRegression(independents.length(), 1)); // # of independent variables is the size of list (length) and # of dependent is 1
-
-// var trendPlanet = planet.select(independents.add(dependent)) // append ndvi to the end // expects the bands to be in order of independent followed by dependent
-//   .reduce(ee.Reducer.linearRegression(independents.length(), 1)); // # of independent variables is the size of list (length) and # of dependent is 1
-
 
 // Plot a time series of NDVI at a single location.
 var l8Chart = ui.Chart.image.series(l8.select('NDVI'), roi)
@@ -139,39 +138,22 @@ var ModisChart = ui.Chart.image.series(modis.select('NDVI'), roi)
     });
 print(ModisChart);
 
-// Plot a time series of NDVI at a single location.
-// var PlanetChart = ui.Chart.image.series(planet.select('NDVI'), roi)
-//     .setChartType('ScatterChart')
-//     .setOptions({
-//       title: 'Planet NDVI time series at ROI',
-//       trendlines: {0: {
-//         color: 'CC0000'
-//       }},
-//       lineWidth: 1,
-//       pointSize: 3,
-//     });
-// //print(PlanetChart);
-
-// print(planet)
-// print(trendPlanet)
-
-
+// Visualization parameters
 var ndviParams = {min: -1, max: 1, palette: ['blue', 'white', 'green']};
 
+// Mean NDVI in June for MODIS
 var modisMean = modis.filterDate('2020-06-01', '2020-06-30')
   .select('NDVI')
   .reduce(ee.Reducer.mean())
   .mask(appleCDL);
 
+  // Mean NDVI in June for L8
 var landsMean = l8.filterDate('2020-06-01', '2020-06-30')
   .select('NDVI')
   .reduce(ee.Reducer.mean())
   .mask(appleCDL);
 
-
-
+// Map
 Map.addLayer(modisMean, ndviParams, 'Modis')
 Map.addLayer(landsMean, ndviParams, 'Landsat')
-// Map.addLayer(l8.filterBounds(roi).select('NDVI'), ndviParams)
-// Map.addLayer(modis.filterBounds(roi).select('NDVI'), ndviParams)
-//Map.addLayer(appleCDL, {}, 'Crop Landcover');
+Map.addLayer(appleCDL, {}, 'Crop Landcover');
